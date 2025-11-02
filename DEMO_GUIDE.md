@@ -8,10 +8,17 @@
 
 ## 🌐 Access URLs
 
-### Law Enforcement Portal
+### Law Enforcement Portal (LERS Standalone)
+- **URL:** http://localhost:3000/lers/portal/
+- **Login:** http://localhost:3000/lers/portal/login
+- **Dashboard:** http://localhost:3000/lers/portal/dashboard
+- **Purpose:** Standalone LERS portal (NO case management, investigation, or other CMS features)
+- **Features:** Create LERS requests, browse provider catalog, real-time chat, notifications
+
+### Full CMS Portal (with Case Management)
 - **URL:** http://localhost:3000
-- **Alternative:** http://localhost (via Nginx)
-- **Purpose:** For police officers to create and manage LERS requests
+- **Purpose:** Complete CMS with cases, investigation, entities, AND LERS
+- **Note:** Use this if you want the full case management system
 
 ### Provider Portal
 - **URL:** http://localhost:3001
