@@ -234,11 +234,11 @@ services:
 
   lers_law_enforcement_portal:
     build:
-      context: ./frontend_lers_le
+      context: ./frontend_cms
       dockerfile: Dockerfile
     container_name: lers_le_portal
     volumes:
-      - ./frontend_lers_le:/app
+      - ./frontend_cms:/app
       - /app/node_modules
     ports:
       - "${LE_PORTAL_PORT:-3100}:3000"
@@ -262,11 +262,11 @@ services:
 
   lers_provider_portal:
     build:
-      context: ./frontend_lers_provider
+      context: ./frontend_provider
       dockerfile: Dockerfile
     container_name: lers_provider_portal
     volumes:
-      - ./frontend_lers_provider:/app
+      - ./frontend_provider:/app
       - /app/node_modules
     ports:
       - "${PROVIDER_PORTAL_PORT:-3101}:3001"
