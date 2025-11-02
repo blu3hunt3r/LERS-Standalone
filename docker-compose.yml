@@ -90,7 +90,7 @@ services:
   lers_backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile.lers-standalone
+      dockerfile: Dockerfile
     container_name: lers_backend
     command: >
       sh -c "mkdir -p /app/logs &&
@@ -137,7 +137,7 @@ services:
   lers_celery_worker:
     build:
       context: ./backend
-      dockerfile: Dockerfile.lers-standalone
+      dockerfile: Dockerfile
     container_name: lers_celery_worker
     command: celery -A lers_standalone worker --loglevel=info --concurrency=4
     volumes:
@@ -175,7 +175,7 @@ services:
   lers_celery_beat:
     build:
       context: ./backend
-      dockerfile: Dockerfile.lers-standalone
+      dockerfile: Dockerfile
     container_name: lers_celery_beat
     command: celery -A lers_standalone beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
@@ -202,7 +202,7 @@ services:
   lers_socket_server:
     build:
       context: ./backend
-      dockerfile: Dockerfile.lers-standalone
+      dockerfile: Dockerfile
     container_name: lers_socket_server
     command: python socket_server_lers.py
     volumes:
