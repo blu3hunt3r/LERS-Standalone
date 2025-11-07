@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('evidence', '0001_initial'),
         ('lers', '0001_initial'),
-        ('cases', '0002_initial'),
+        ('cases', '0001_initial'),  # STANDALONE: Changed from 0002_initial
     ]
 
     operations = [

@@ -28,12 +28,13 @@ class LERSApprovalWorkflowSerializer(serializers.ModelSerializer):
 
 class LERSResponseSerializer(serializers.ModelSerializer):
     """Serializer for LERS response."""
-    
+
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     submitted_by_name = serializers.CharField(source='submitted_by.full_name', read_only=True)
     request_number = serializers.CharField(source='request.request_number', read_only=True)
     evidence_count = serializers.SerializerMethodField()
-    
+    evidence_files = serializers.SerializerMethodField()
+
     class Meta:
         model = LERSResponse
         fields = [
@@ -41,13 +42,41 @@ class LERSResponseSerializer(serializers.ModelSerializer):
             'submitted_by', 'submitted_by_name', 'submitted_at',
             'status', 'status_display', 'parsed_data',
             'signature', 'signature_verified', 'response_text',
-            'remarks', 'evidence_count', 'metadata', 'created_at'
+            'remarks', 'evidence_count', 'evidence_files', 'metadata', 'created_at'
         ]
         read_only_fields = ['id', 'response_number', 'created_at']
-    
+
     def get_evidence_count(self, obj):
         """Get count of evidence files in response."""
         return obj.evidence_files.count()
+
+    def get_evidence_files(self, obj):
+        """Get evidence files with download URLs."""
+        request = self.context.get('request')
+        files = obj.evidence_files.all()
+
+        file_list = []
+        for evidence_file in files:
+            # Build download URL
+            download_url = None
+            if request:
+                download_url = request.build_absolute_uri(
+                    f'/api/v1/evidence/files/{evidence_file.id}/download/'
+                )
+
+            file_list.append({
+                'id': str(evidence_file.id),
+                'file_name': evidence_file.file_name,
+                'file_size': evidence_file.file_size,
+                'file_type': evidence_file.file_type,
+                'mime_type': evidence_file.mime_type,
+                'sha256_hash': evidence_file.sha256_hash,
+                'uploaded_at': evidence_file.created_at,
+                'download_url': download_url,
+                'is_encrypted': evidence_file.is_encrypted
+            })
+
+        return file_list
 
 
 class LERSRequestSerializer(serializers.ModelSerializer):
@@ -138,20 +167,37 @@ class LERSRequestListSerializer(serializers.ModelSerializer):
 
 class LERSRequestCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating LERS requests."""
-    
+
+    fir_number = serializers.CharField(required=True, write_only=True, help_text="FIR number to link this request to")
+
     class Meta:
         model = LERSRequest
         fields = [
-            'case', 'request_type', 'provider', 'provider_tenant',
+            'fir_number', 'request_type', 'provider', 'provider_tenant',
             'identifiers', 'description', 'date_range_from', 'date_range_to',
             'legal_mandate_type', 'legal_mandate_file', 'court_order_number',
             'priority', 'notes'
         ]
-    
+
     def create(self, validated_data):
-        """Create LERS request with auto-generated fields."""
+        """Create LERS request with auto-generated fields and auto-create Case from FIR number."""
+        from apps.cases.models import Case
         user = self.context['request'].user
-        
+
+        # Extract FIR number
+        fir_number = validated_data.pop('fir_number')
+
+        # Auto-create or get Case from FIR number
+        case, created = Case.objects.get_or_create(
+            case_number=fir_number,
+            tenant=user.tenant,
+            defaults={
+                'title': f'Case for {fir_number}',
+                'is_deleted': False
+            }
+        )
+        validated_data['case'] = case
+
         # Auto-map provider name to provider_tenant if not provided
         if not validated_data.get('provider_tenant') and validated_data.get('provider'):
             from apps.tenants.models import Tenant
@@ -160,25 +206,13 @@ class LERSRequestCreateSerializer(serializers.ModelSerializer):
             tenant = Tenant.objects.filter(name__icontains=provider_name).first()
             if tenant:
                 validated_data['provider_tenant'] = tenant
-        
+
         # Create request
         lers_request = LERSRequest(**validated_data)
         lers_request.created_by = user
         lers_request.request_number = lers_request.generate_request_number()
         lers_request.sla_due_date = lers_request.calculate_sla_due_date()
         lers_request.save()
-
-        # Create timeline event in case (only if request is linked to a case)
-        if lers_request.case:
-            from apps.cases.models import CaseTimeline
-            CaseTimeline.objects.create(
-                case=lers_request.case,
-                event_type='REQUEST_CREATED',
-                title='LERS Request Created',
-                description=f'Request {lers_request.request_number} created for {lers_request.get_request_type_display()}',
-                actor=user,
-                related_request=lers_request
-            )
 
         return lers_request
 
@@ -217,17 +251,18 @@ class LERSResponseCreateSerializer(serializers.ModelSerializer):
         # Update request status
         request_obj.status = 'RESPONSE_UPLOADED'
         request_obj.save(update_fields=['status'])
-        
-        # Create timeline event
-        from apps.cases.models import CaseTimeline
-        CaseTimeline.objects.create(
-            case=request_obj.case,
-            event_type='RESPONSE_RECEIVED',
-            title='LERS Response Received',
-            description=f'Response received for request {request_obj.request_number}',
-            actor=user,
-            related_request=request_obj
-        )
+
+        # Create timeline event (only if linked to a case)
+        if request_obj.case:
+            from apps.cases.models import CaseTimeline
+            CaseTimeline.objects.create(
+                case=request_obj.case,
+                event_type='RESPONSE_RECEIVED',
+                title='LERS Response Received',
+                description=f'Response received for request {request_obj.request_number}',
+                actor=user,
+                related_request=request_obj
+            )
         
         return response
 

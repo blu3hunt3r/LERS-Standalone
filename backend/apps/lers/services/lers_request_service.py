@@ -143,7 +143,10 @@ class LERSRequestService:
 
         # Create timeline event
         from apps.cases.services import TimelineService
-        TimelineService.create_request_event(
+        # Timeline event (optional - only if linked to case)
+        if lers_request.case:
+            from apps.cases.services import TimelineService
+            TimelineService.create_request_event(
             case=case,
             lers_request=lers_request,
             actor=created_by,
@@ -198,7 +201,10 @@ class LERSRequestService:
 
         # Create timeline event
         from apps.cases.services import TimelineService
-        TimelineService.create_event(
+        # Timeline event (optional - only if linked to case)
+        if lers_request.case:
+            from apps.cases.services import TimelineService
+            TimelineService.create_event(
             case=lers_request.case,
             event_type='CUSTOM',
             title='LERS Request Submitted for Approval',
@@ -264,7 +270,10 @@ class LERSRequestService:
 
         # Create timeline event
         from apps.cases.services import TimelineService
-        TimelineService.create_approval_event(
+        # Timeline event (optional - only if linked to case)
+        if lers_request.case:
+            from apps.cases.services import TimelineService
+            TimelineService.create_approval_event(
             case=lers_request.case,
             approver=approved_by,
             approval_type='LERS Request Approval',
@@ -344,7 +353,10 @@ class LERSRequestService:
 
         # Create timeline event
         from apps.cases.services import TimelineService
-        TimelineService.create_approval_event(
+        # Timeline event (optional - only if linked to case)
+        if lers_request.case:
+            from apps.cases.services import TimelineService
+            TimelineService.create_approval_event(
             case=lers_request.case,
             approver=rejected_by,
             approval_type='LERS Request Approval',
@@ -454,7 +466,10 @@ class LERSRequestService:
 
         # Create timeline event
         from apps.cases.services import TimelineService
-        TimelineService.create_event(
+        # Timeline event (optional - only if linked to case)
+        if lers_request.case:
+            from apps.cases.services import TimelineService
+            TimelineService.create_event(
             case=lers_request.case,
             event_type='CUSTOM',
             title='LERS Request Submitted to Provider',
@@ -587,7 +602,10 @@ class LERSRequestService:
 
         # Create timeline event
         from apps.cases.services import TimelineService
-        TimelineService.create_event(
+        # Timeline event (optional - only if linked to case)
+        if lers_request.case:
+            from apps.cases.services import TimelineService
+            TimelineService.create_event(
             case=lers_request.case,
             event_type='CUSTOM',
             title='LERS Request Completed',

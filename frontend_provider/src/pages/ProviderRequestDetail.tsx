@@ -40,9 +40,9 @@ const ProviderRequestDetail: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   // Fetch request details
-  const { data: request, isLoading } = useQuery({
+  const { data: request, isLoading, refetch } = useQuery({
     queryKey: ['lers-request', requestId],
-    queryFn: () => lersService.getLERSRequest(requestId!),
+    queryFn: () => lersService.getRequest(requestId!),
     enabled: !!requestId,
   });
 
@@ -72,33 +72,26 @@ const ProviderRequestDetail: React.FC = () => {
       selectedFiles.forEach(file => {
         formData.append('files', file);
       });
-      formData.append('notes', responseNotes);
+      formData.append('response_text', responseNotes);
+      formData.append('remarks', responseNotes);
 
-      // TODO: Create proper upload endpoint
-      // return lersService.uploadResponse(requestId!, formData);
-      
-      // Simulate upload for now
-      return new Promise((resolve) => {
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 10;
-          setUploadProgress(progress);
-          if (progress >= 100) {
-            clearInterval(interval);
-            resolve({ success: true });
-          }
-        }, 200);
-      });
+      return lersService.uploadResponseFiles(requestId!, formData);
     },
-    onSuccess: () => {
-      toast.success('✅ Response uploaded successfully');
+    onSuccess: (data) => {
+      toast.success(`✅ ${data.message || 'Response uploaded successfully'}`);
+      if (data.errors && data.errors.length > 0) {
+        data.errors.forEach((error: any) => {
+          toast.error(`${error.file_name}: ${error.error}`);
+        });
+      }
       setSelectedFiles([]);
       setResponseNotes('');
       setUploadProgress(0);
       queryClient.invalidateQueries({ queryKey: ['lers-request', requestId] });
+      refetch();
     },
     onError: (error: any) => {
-      toast.error(error.message || 'Failed to upload response');
+      toast.error(error.response?.data?.error?.message || error.message || 'Failed to upload response');
       setUploadProgress(0);
     },
   });

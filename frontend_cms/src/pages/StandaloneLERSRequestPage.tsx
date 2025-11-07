@@ -19,10 +19,10 @@ export default function StandaloneLERSRequestPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const preselectedCaseId = searchParams.get('caseId') || ''
+  const prefilledFirNumber = searchParams.get('firNumber') || ''
 
   const [formData, setFormData] = useState<any>({
-    case_id: preselectedCaseId, // Optional - can be empty for standalone requests
+    fir_number: prefilledFirNumber, // FIR number as text input
     request_type: '',
     priority: 'NORMAL',
     provider: '',
@@ -34,18 +34,26 @@ export default function StandaloneLERSRequestPage() {
     date_range_to: '',
     notes: '',
     data_points: {}, // Provider-specific data points
-    is_standalone: true, // Flag to indicate this is standalone
   })
 
   const [selectedProvider, setSelectedProvider] = useState<any>(null)
   const [selectedCapability, setSelectedCapability] = useState<any>(null)
-  const [linkToCase, setLinkToCase] = useState(!!preselectedCaseId) // Whether to link to a case
+  const [isNewFIR, setIsNewFIR] = useState(!prefilledFirNumber) // If no prefilled FIR, show new option
 
-  // Fetch available cases (optional)
-  const { data: casesData, isLoading: casesLoading } = useQuery({
-    queryKey: ['cases'],
-    queryFn: () => caseService.getCases({ limit: 100 }),
-    enabled: linkToCase // Only load if user wants to link to case
+  // Fetch existing FIRs (unique case numbers from existing requests)
+  const { data: existingFIRs, isLoading: firsLoading } = useQuery({
+    queryKey: ['lersRequests'],
+    queryFn: () => lersService.getRequests(),
+    select: (data) => {
+      // Extract unique FIR numbers
+      const uniqueFIRs = new Set<string>()
+      data?.results?.forEach((request: any) => {
+        if (request.case_number) {
+          uniqueFIRs.add(request.case_number)
+        }
+      })
+      return Array.from(uniqueFIRs).sort()
+    }
   })
 
   // Fetch all providers
@@ -126,17 +134,13 @@ export default function StandaloneLERSRequestPage() {
     e.preventDefault()
 
     const submitData: any = {
+      fir_number: formData.fir_number,
       request_type: formData.request_type,
       priority: formData.priority,
       provider: formData.provider,
       description: formData.description,
       legal_mandate_type: formData.legal_mandate_type,
       identifiers: formData.data_points, // Map data_points to identifiers
-    }
-
-    // Only include case if user selected one
-    if (formData.case_id) {
-      submitData.case = formData.case_id
     }
 
     if (formData.date_range_from) {
@@ -153,7 +157,6 @@ export default function StandaloneLERSRequestPage() {
     submitData.metadata = {
       provider_id: formData.provider_id,
       data_points: formData.data_points,
-      is_standalone: !formData.case_id,
       capability_info: {
         sla_hours: selectedCapability?.sla_hours,
         integration_type: selectedCapability?.integration_type,
@@ -291,7 +294,7 @@ export default function StandaloneLERSRequestPage() {
     }
   }
 
-  if (providersLoading || (linkToCase && casesLoading)) {
+  if (providersLoading || firsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -339,47 +342,73 @@ export default function StandaloneLERSRequestPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Optional Case Selection */}
-          <Card className="border border-gray-200">
+          {/* FIR Number - Required */}
+          <Card className="border-2 border-gray-300">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-normal flex items-center gap-2">
-                  <span className="text-slate-700">📁</span> Case Link (Optional)
+                  <span className="text-slate-700">📁</span> FIR Information
                 </CardTitle>
-                <button
-                  type="button"
-                  onClick={() => setLinkToCase(!linkToCase)}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  {linkToCase ? 'Remove case link' : 'Link to case'}
-                </button>
+                {existingFIRs && existingFIRs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsNewFIR(!isNewFIR)
+                      if (!isNewFIR) {
+                        setFormData({ ...formData, fir_number: '' })
+                      }
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    {isNewFIR ? 'Select existing FIR' : 'Create new FIR'}
+                  </button>
+                )}
               </div>
             </CardHeader>
-            {linkToCase && (
-              <CardContent className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Select Case (Optional)
-                  </label>
-                  <select
-                    name="case_id"
-                    value={formData.case_id}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">No case - Standalone request</option>
-                    {casesData?.results.map((caseItem) => (
-                      <option key={caseItem.id} value={caseItem.id}>
-                        {caseItem.case_number} - {caseItem.title}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Optional: Link this request to an existing case for better organization
-                  </p>
-                </div>
-              </CardContent>
-            )}
+            <CardContent className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  FIR Number <span className="text-red-500">*</span>
+                </label>
+
+                {isNewFIR ? (
+                  <>
+                    <input
+                      type="text"
+                      name="fir_number"
+                      required
+                      value={formData.fir_number}
+                      onChange={handleChange}
+                      placeholder="e.g., FIR-2024-MUM-001"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Enter a new FIR number
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <select
+                      name="fir_number"
+                      required
+                      value={formData.fir_number}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Select an existing FIR...</option>
+                      {existingFIRs?.map((fir: string) => (
+                        <option key={fir} value={fir}>
+                          {fir}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Select from existing FIRs to group this request
+                    </p>
+                  </>
+                )}
+              </div>
+            </CardContent>
           </Card>
 
           {/* Provider Selection - Dropdown */}

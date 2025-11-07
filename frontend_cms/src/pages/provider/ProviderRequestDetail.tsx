@@ -19,8 +19,15 @@ import {
   AlertTriangle,
   Download,
   X,
+  CheckCircle,
+  History,
+  User,
+  Check,
+  XCircle,
+  Edit,
 } from 'lucide-react';
 import { lersService } from '@/services/lersService';
+import { evidenceService } from '@/services/evidenceService';
 import LERSRequestChat from '@/components/lers/LERSRequestChat';
 import { toast } from 'react-toastify';
 
@@ -34,7 +41,7 @@ export default function ProviderRequestDetail() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch request details
-  const { data: request, isLoading } = useQuery({
+  const { data: request, isLoading, refetch } = useQuery({
     queryKey: ['provider-lers-request', requestId],
     queryFn: () => lersService.getRequest(requestId!),
     enabled: !!requestId,
@@ -42,7 +49,7 @@ export default function ProviderRequestDetail() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-slate-600 mx-auto mb-2" />
           <p className="text-sm text-gray-600">Loading request details...</p>
@@ -53,8 +60,8 @@ export default function ProviderRequestDetail() {
 
   if (!request) {
     return (
-      <div className="min-h-screen bg-[#F7F8FA]">
-        <div className="max-w-full px-6 py-6">
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-full px-8 py-6">
           <Card className="border border-gray-200 shadow-sm">
             <CardContent className="p-8 text-center">
               <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
@@ -111,24 +118,52 @@ export default function ProviderRequestDetail() {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleDownload = async (fileId: string, fileName: string) => {
+    try {
+      await evidenceService.downloadFile(fileId, fileName);
+      toast.success(`Downloading ${fileName}...`);
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error('Failed to download file');
+    }
+  };
+
   const handleUpload = async () => {
     if (selectedFiles.length === 0) {
       toast.error('Please select files to upload');
       return;
     }
 
+    if (!requestId) {
+      toast.error('Invalid request ID');
+      return;
+    }
+
     setUploading(true);
     try {
-      // TODO: Implement actual file upload to backend
-      // For now, just simulate upload
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      toast.success('Files uploaded successfully!');
+      // Upload files to backend
+      const result = await lersService.uploadResponseFiles(requestId, selectedFiles);
+
+      toast.success(result.message || `${result.total_files} file(s) uploaded successfully!`);
+
+      // Show any errors
+      if (result.errors && result.errors.length > 0) {
+        result.errors.forEach((err: any) => {
+          toast.error(`Failed to upload ${err.file_name}: ${err.error}`);
+        });
+      }
+
+      // Clear selected files
       setSelectedFiles([]);
-      
-      // TODO: Refresh request data or navigate
-    } catch (error) {
-      toast.error('Failed to upload files');
+
+      // Refresh request data to show uploaded files
+      refetch();
+
+      // Navigate to inbox or stay on page
+      // navigate('/lers/provider/inbox');
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || error.message || 'Failed to upload files';
+      toast.error(errorMsg);
       console.error('Upload error:', error);
     } finally {
       setUploading(false);
@@ -136,8 +171,8 @@ export default function ProviderRequestDetail() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA]">
-      <div className="max-w-full px-6 py-6 space-y-6">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-full px-8 py-6 space-y-6">
         
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -175,6 +210,10 @@ export default function ProviderRequestDetail() {
             <TabsTrigger value="upload">
               <Upload className="h-4 w-4 mr-2" />
               Upload Response
+            </TabsTrigger>
+            <TabsTrigger value="timeline">
+              <History className="h-4 w-4 mr-2" />
+              Timeline
             </TabsTrigger>
           </TabsList>
 
@@ -390,6 +429,239 @@ export default function ProviderRequestDetail() {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Display Uploaded Response Files */}
+            {request.responses && request.responses.length > 0 && (
+              <Card className="border border-gray-200 shadow-sm mt-6">
+                <CardContent className="p-6">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">
+                    Uploaded Response Files ({request.responses[0].evidence_count || 0})
+                  </h3>
+
+                  {request.responses[0].evidence_files && request.responses[0].evidence_files.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-200 mb-4">
+                        <CheckCircle className="h-5 w-5 text-green-600" />
+                        <div>
+                          <p className="text-sm font-medium text-green-900">
+                            {request.responses[0].evidence_count} file(s) uploaded successfully
+                          </p>
+                          <p className="text-xs text-green-700 mt-0.5">
+                            Response Number: {request.responses[0].response_number}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* List of uploaded files */}
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Response Files:</h4>
+                        {request.responses[0].evidence_files.map((file: any, index: number) => (
+                          <div key={file.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                            <div className="flex items-center gap-3">
+                              <FileText className="h-5 w-5 text-slate-600" />
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{file.file_name}</p>
+                                <p className="text-xs text-gray-500">
+                                  {(file.file_size / 1024).toFixed(2)} KB • {file.file_type} • SHA256: {file.sha256_hash.substring(0, 8)}...
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownload(file.id, file.file_name)}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Download
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : request.responses[0].evidence_count > 0 ? (
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-600 mb-4">
+                        Your response files have been uploaded and are being processed.
+                      </p>
+                      <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-200">
+                        <CheckCircle className="h-5 w-5 text-green-600" />
+                        <div>
+                          <p className="text-sm font-medium text-green-900">
+                            {request.responses[0].evidence_count} file(s) uploaded successfully
+                          </p>
+                          <p className="text-xs text-green-700 mt-0.5">
+                            Response Number: {request.responses[0].response_number}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-sm text-gray-500">No files uploaded yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Upload response files using the form above</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Timeline Tab */}
+          <TabsContent value="timeline" className="mt-6">
+            <Card className="border border-gray-200 shadow-sm">
+              <CardContent className="p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-6">Request Timeline & Audit Log</h3>
+
+                <div className="flow-root">
+                  <ul className="-mb-8">
+                    {/* Request Created */}
+                    <li>
+                      <div className="relative pb-8">
+                        <span className="absolute top-5 left-5 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true"></span>
+                        <div className="relative flex items-start space-x-3">
+                          <div className="relative">
+                            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center ring-8 ring-white">
+                              <FileText className="h-5 w-5 text-blue-600" />
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div>
+                              <div className="text-sm">
+                                <span className="font-medium text-gray-900">Request Created</span>
+                              </div>
+                              <p className="mt-0.5 text-sm text-gray-500">
+                                {new Date(request.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="mt-2 text-sm text-gray-700">
+                              <p>Request #{request.request_number} was submitted for {request.request_type_display}</p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Case: {request.case_number} • Priority: {request.priority}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+
+                    {/* Approval Workflow History */}
+                    {request.approval_workflow && request.approval_workflow.length > 0 && (
+                      request.approval_workflow.map((workflow: any, idx: number) => (
+                        <li key={workflow.id}>
+                          <div className="relative pb-8">
+                            {idx < request.approval_workflow.length - 1 && (
+                              <span className="absolute top-5 left-5 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true"></span>
+                            )}
+                            <div className="relative flex items-start space-x-3">
+                              <div className="relative">
+                                <div className={`h-10 w-10 rounded-full flex items-center justify-center ring-8 ring-white ${
+                                  workflow.action === 'APPROVE' ? 'bg-green-100' :
+                                  workflow.action === 'REJECT' ? 'bg-red-100' :
+                                  'bg-yellow-100'
+                                }`}>
+                                  {workflow.action === 'APPROVE' ? (
+                                    <Check className="h-5 w-5 text-green-600" />
+                                  ) : workflow.action === 'REJECT' ? (
+                                    <XCircle className="h-5 w-5 text-red-600" />
+                                  ) : (
+                                    <Edit className="h-5 w-5 text-yellow-600" />
+                                  )}
+                                </div>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div>
+                                  <div className="text-sm">
+                                    <span className="font-medium text-gray-900">
+                                      {workflow.action === 'APPROVE' ? 'Approved' :
+                                       workflow.action === 'REJECT' ? 'Rejected' :
+                                       'Changes Requested'}
+                                    </span>
+                                    {' by '}
+                                    <span className="font-medium text-gray-900">
+                                      {workflow.approver_name || 'Unknown'}
+                                    </span>
+                                  </div>
+                                  <p className="mt-0.5 text-sm text-gray-500">
+                                    {new Date(workflow.action_timestamp).toLocaleString()}
+                                  </p>
+                                </div>
+                                {workflow.comments && (
+                                  <div className="mt-2 text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
+                                    <p className="text-xs font-medium text-gray-500 mb-1">Comments:</p>
+                                    <p>{workflow.comments}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </li>
+                      ))
+                    )}
+
+                    {/* Status: In Progress */}
+                    {request.status === 'IN_PROGRESS' && (
+                      <li>
+                        <div className="relative pb-8">
+                          <span className="absolute top-5 left-5 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true"></span>
+                          <div className="relative flex items-start space-x-3">
+                            <div className="relative">
+                              <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center ring-8 ring-white">
+                                <Clock className="h-5 w-5 text-amber-600" />
+                              </div>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div>
+                                <div className="text-sm">
+                                  <span className="font-medium text-gray-900">In Progress</span>
+                                </div>
+                                <p className="mt-0.5 text-sm text-gray-500">
+                                  {new Date(request.updated_at).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="mt-2 text-sm text-gray-700">
+                                <p>Request is currently being processed by the provider</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    )}
+
+                    {/* Status: Response Uploaded */}
+                    {request.status === 'RESPONSE_UPLOADED' && request.responses && request.responses.length > 0 && (
+                      <li>
+                        <div className="relative pb-8">
+                          <div className="relative flex items-start space-x-3">
+                            <div className="relative">
+                              <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center ring-8 ring-white">
+                                <CheckCircle className="h-5 w-5 text-green-600" />
+                              </div>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div>
+                                <div className="text-sm">
+                                  <span className="font-medium text-gray-900">Response Uploaded</span>
+                                </div>
+                                <p className="mt-0.5 text-sm text-gray-500">
+                                  {new Date(request.responses[0].created_at).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="mt-2 text-sm text-gray-700">
+                                <p>Provider submitted response with {request.responses[0].evidence_files?.length || 0} file(s)</p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Response #: {request.responses[0].response_number}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    )}
+                  </ul>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

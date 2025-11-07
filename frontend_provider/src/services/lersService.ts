@@ -153,5 +153,17 @@ export const lersService = {
     })
     return response.data
   },
+
+  /**
+   * Upload response files for a LERS request
+   */
+  async uploadResponseFiles(requestId: string, formData: FormData) {
+    const response = await api.post(`/lers/requests/${requestId}/upload-response-files/`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  },
 }
 

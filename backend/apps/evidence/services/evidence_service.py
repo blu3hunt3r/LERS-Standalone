@@ -121,7 +121,6 @@ class EvidenceService:
             # Create evidence record
             evidence = EvidenceFile.objects.create(
                 case=case,
-                tenant=case.tenant,
                 file_name=uploaded_file.name,
                 file_type=file_type,
                 mime_type=mime_type,
@@ -168,14 +167,18 @@ class EvidenceService:
                     # Don't fail upload if signing fails, but log it
                     logger.error(f"Failed to sign evidence {evidence.id}: {e}")
 
-            # Create timeline event
-            from apps.cases.services import TimelineService
-            TimelineService.create_evidence_event(
-                case=case,
-                evidence_file=evidence,
-                actor=uploaded_by,
-                description=f'Evidence file uploaded: {uploaded_file.name} ({file_type})'
-            )
+            # Create timeline event (optional - only if full case management is enabled)
+            try:
+                from apps.cases.services import TimelineService
+                TimelineService.create_evidence_event(
+                    case=case,
+                    evidence_file=evidence,
+                    actor=uploaded_by,
+                    description=f'Evidence file uploaded: {uploaded_file.name} ({file_type})'
+                )
+            except (ImportError, AttributeError):
+                # Timeline service not available in standalone mode
+                pass
 
             logger.info(
                 f"Evidence upload complete: {evidence.id} - {evidence.file_name}"

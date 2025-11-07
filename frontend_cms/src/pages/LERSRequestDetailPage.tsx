@@ -15,14 +15,27 @@ import {
   Download, Upload, MessageSquare, History
 } from 'lucide-react'
 import api from '@/services/api'
+import { evidenceService } from '@/services/evidenceService'
 import LERSRequestChat from '@/components/lers/LERSRequestChat'
 import RequestTracker from '@/components/lers/RequestTracker'
+import { toast } from 'react-toastify'
 
 export default function LERSRequestDetailPage() {
   const { requestId } = useParams<{ requestId: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState<'details' | 'timeline' | 'responses' | 'chat'>('details')
+
+  // Download handler with authentication
+  const handleDownload = async (fileId: string, fileName: string) => {
+    try {
+      await evidenceService.downloadFile(fileId, fileName)
+      toast.success(`Downloading ${fileName}...`)
+    } catch (error: any) {
+      console.error('Download error:', error)
+      toast.error(error.message || 'Failed to download file')
+    }
+  }
   
   // Check for tab query parameter
   useEffect(() => {
@@ -106,7 +119,7 @@ export default function LERSRequestDetailPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Card className="max-w-md w-full">
-          <CardContent className="pt-6">
+          <CardContent className="p-6">
             <div className="text-center">
               <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
               <h2 className="text-xl font-semibold text-gray-900 mb-2">Request Not Found</h2>
@@ -132,7 +145,7 @@ export default function LERSRequestDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4 py-6">
+      <div className="max-w-full mx-auto px-6 py-6">
         {/* Header */}
         <div className="mb-6">
           <Button
@@ -181,18 +194,18 @@ export default function LERSRequestDetailPage() {
 
         {/* SLA Alert */}
         {slaStatus && (
-          <Card className={`mb-4 border-l-4 ${
-            slaStatus.label === 'Overdue' ? 'border-l-red-500' :
-            slaStatus.label === 'Due Today' ? 'border-l-orange-500' :
-            'border-l-yellow-500'
+          <Card className={`mb-4 border-l-4 border-2 shadow-md ${
+            slaStatus.label === 'Overdue' ? 'border-l-red-500 border-red-200 bg-red-50' :
+            slaStatus.label === 'Due Today' ? 'border-l-orange-500 border-orange-200 bg-orange-50' :
+            'border-l-blue-500 border-blue-200 bg-blue-50'
           }`}>
-            <CardContent className="py-3">
+            <CardContent className="px-6 py-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Clock className={`h-5 w-5 ${
                     slaStatus.label === 'Overdue' ? 'text-red-600' :
                     slaStatus.label === 'Due Today' ? 'text-orange-600' :
-                    'text-yellow-600'
+                    'text-blue-600'
                   }`} />
                   <div>
                     <p className="text-sm font-medium text-gray-900">
@@ -217,7 +230,7 @@ export default function LERSRequestDetailPage() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-4 border-b border-gray-200">
+        <div className="flex gap-1 mb-4 border-b-2 border-gray-300">
           {tabs.map(tab => {
             const Icon = tab.icon
             return (
@@ -243,14 +256,14 @@ export default function LERSRequestDetailPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Main Details */}
               <div className="lg:col-span-2 space-y-4">
-                <Card>
-                  <CardHeader className="pb-3">
+                <Card className="border-2 border-gray-300 shadow-sm">
+                  <CardHeader className="pb-3 bg-gray-50 border-b-2 border-gray-200">
                     <CardTitle className="text-base font-semibold flex items-center gap-2">
                       <FileText className="h-4 w-4 text-slate-700" />
                       Request Information
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="p-6 space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs text-gray-600 mb-1">Request Type</p>
@@ -311,14 +324,14 @@ export default function LERSRequestDetailPage() {
                 </Card>
 
                 {request.response_data && (
-                  <Card>
-                    <CardHeader className="pb-3">
+                  <Card className="border-2 border-gray-300 shadow-sm">
+                    <CardHeader className="pb-3 bg-gray-50 border-b-2 border-gray-200">
                       <CardTitle className="text-base font-semibold flex items-center gap-2">
                         <CheckCircle className="h-4 w-4 text-green-600" />
                         Response Data
                       </CardTitle>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="p-6">
                       <pre className="text-xs bg-gray-50 p-3 rounded-md overflow-x-auto">
                         {JSON.stringify(request.response_data, null, 2)}
                       </pre>
@@ -329,11 +342,11 @@ export default function LERSRequestDetailPage() {
 
               {/* Sidebar */}
               <div className="space-y-4">
-                <Card>
-                  <CardHeader className="pb-3">
+                <Card className="border-2 border-gray-300 shadow-sm">
+                  <CardHeader className="pb-3 bg-gray-50 border-b-2 border-gray-200">
                     <CardTitle className="text-base font-semibold">Timeline</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
+                  <CardContent className="p-6 space-y-3">
                     <div>
                       <p className="text-xs text-gray-600 mb-1">Created</p>
                       <p className="text-sm font-medium">{formatDateTime(request.created_at)}</p>
@@ -363,11 +376,11 @@ export default function LERSRequestDetailPage() {
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader className="pb-3">
+                <Card className="border-2 border-gray-300 shadow-sm">
+                  <CardHeader className="pb-3 bg-gray-50 border-b-2 border-gray-200">
                     <CardTitle className="text-base font-semibold">Actions</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2">
+                  <CardContent className="p-6 space-y-2">
                     {request.status === 'DRAFT' && (
                       <Button className="w-full" size="sm">
                         Submit Request
@@ -402,7 +415,7 @@ export default function LERSRequestDetailPage() {
                   Request Timeline
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-6">
                 <div className="text-center py-12">
                   <History className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">Timeline feature coming soon</p>
@@ -420,14 +433,70 @@ export default function LERSRequestDetailPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <Download className="h-4 w-4 text-slate-700" />
-                  Response Files
+                  Response Files ({request.responses?.length > 0 ? request.responses[0].evidence_count || 0 : 0})
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="text-center py-12">
-                  <Download className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">No response files yet</p>
-                </div>
+              <CardContent className="p-6">
+                {request.responses && request.responses.length > 0 && request.responses[0].evidence_files && request.responses[0].evidence_files.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* Response Info */}
+                    <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <FileText className="h-5 w-5 text-blue-600" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-900">
+                          Response received from provider
+                        </p>
+                        <p className="text-xs text-blue-700 mt-0.5">
+                          Response Number: {request.responses[0].response_number} • Submitted: {new Date(request.responses[0].submitted_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* List of files */}
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Uploaded Files:</h4>
+                      {request.responses[0].evidence_files.map((file: any) => (
+                        <div key={file.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <FileText className="h-5 w-5 text-slate-600" />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{file.file_name}</p>
+                              <p className="text-xs text-gray-500">
+                                {(file.file_size / 1024).toFixed(2)} KB • {file.file_type} • Uploaded: {new Date(file.uploaded_at).toLocaleDateString()}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                SHA256: {file.sha256_hash}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleDownload(file.id, file.file_name)}
+                              className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500"
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Download
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Response text if any */}
+                    {request.responses[0].response_text && (
+                      <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Provider Remarks:</h4>
+                        <p className="text-sm text-gray-600 whitespace-pre-wrap">{request.responses[0].response_text}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Download className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500">No response files yet</p>
+                    <p className="text-sm text-gray-400 mt-2">Waiting for provider to upload response</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

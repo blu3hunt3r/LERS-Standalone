@@ -57,7 +57,13 @@ class LERSResponseService:
 
         # Create timeline event
         from apps.cases.services import TimelineService
-        TimelineService.create_request_event(
+        # Timeline event (optional)
+
+        if lers_response.request.case:
+
+            from apps.cases.services import TimelineService
+
+            TimelineService.create_request_event(
             case=lers_request.case,
             lers_request=lers_request,
             actor=submitted_by,

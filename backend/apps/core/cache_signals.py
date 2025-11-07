@@ -18,12 +18,14 @@ from django.dispatch import receiver
 from django.core.cache import cache
 import logging
 
-from apps.cases.models import Case, CaseParticipant, CaseTimeline
+# STANDALONE: Case and entity imports disabled
+# from apps.cases.models import Case, CaseParticipant, CaseTimeline
+# from apps.entities.models import ExtractedEntity
+
 from apps.evidence.models import EvidenceFile
 from apps.lers.models import LERSRequest
 from apps.authentication.models import User
 from apps.tenants.models import Tenant
-from apps.entities.models import ExtractedEntity
 
 from .cache import (
     invalidate_case_cache,
@@ -37,50 +39,50 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# CASE SIGNALS
+# CASE SIGNALS - DISABLED FOR STANDALONE
 # ============================================================================
 
-@receiver([post_save, post_delete], sender=Case)
-def invalidate_case_caches(sender, instance, **kwargs):
-    """
-    Invalidate caches when case is created/updated/deleted.
-
-    Invalidates:
-    - Dashboard stats for tenant
-    - Case counts by status
-    - Entity graph for case
-    """
-    logger.debug(f"Invalidating caches for case {instance.case_number}")
-
-    # Invalidate case-specific caches
-    invalidate_case_cache(instance.id, instance.tenant_id)
-
-    # Invalidate tenant aggregates
-    cache.delete_many([
-        generate_cache_key(CacheKeys.TENANT_STATS, tenant_id=instance.tenant_id),
-        generate_cache_key(CacheKeys.CASE_COUNTS, tenant_id=instance.tenant_id, status='ALL'),
-        generate_cache_key(CacheKeys.CASE_COUNTS, tenant_id=instance.tenant_id, status=instance.status),
-    ])
-
-    # Invalidate assigned user's dashboard
-    if instance.assigned_to_id:
-        cache.delete(generate_cache_key(
-            CacheKeys.DASHBOARD_STATS,
-            tenant_id=instance.tenant_id,
-            user_id=instance.assigned_to_id
-        ))
-
-
-@receiver([post_save, post_delete], sender=CaseParticipant)
-def invalidate_case_participant_cache(sender, instance, **kwargs):
-    """Invalidate case cache when participants change."""
-    cache.delete(f"case_details:{instance.case_id}")
+# @receiver([post_save, post_delete], sender=Case)
+# def invalidate_case_caches(sender, instance, **kwargs):
+#     """
+#     Invalidate caches when case is created/updated/deleted.
+#
+#     Invalidates:
+#     - Dashboard stats for tenant
+#     - Case counts by status
+#     - Entity graph for case
+#     """
+#     logger.debug(f"Invalidating caches for case {instance.case_number}")
+#
+#     # Invalidate case-specific caches
+#     invalidate_case_cache(instance.id, instance.tenant_id)
+#
+#     # Invalidate tenant aggregates
+#     cache.delete_many([
+#         generate_cache_key(CacheKeys.TENANT_STATS, tenant_id=instance.tenant_id),
+#         generate_cache_key(CacheKeys.CASE_COUNTS, tenant_id=instance.tenant_id, status='ALL'),
+#         generate_cache_key(CacheKeys.CASE_COUNTS, tenant_id=instance.tenant_id, status=instance.status),
+#     ])
+#
+#     # Invalidate assigned user's dashboard
+#     if instance.assigned_to_id:
+#         cache.delete(generate_cache_key(
+#             CacheKeys.DASHBOARD_STATS,
+#             tenant_id=instance.tenant_id,
+#             user_id=instance.assigned_to_id
+#         ))
 
 
-@receiver(post_save, sender=CaseTimeline)
-def invalidate_case_timeline_cache(sender, instance, **kwargs):
-    """Invalidate case timeline cache."""
-    cache.delete(f"case_timeline:{instance.case_id}")
+# @receiver([post_save, post_delete], sender=CaseParticipant)
+# def invalidate_case_participant_cache(sender, instance, **kwargs):
+#     """Invalidate case cache when participants change."""
+#     cache.delete(f"case_details:{instance.case_id}")
+
+
+# @receiver(post_save, sender=CaseTimeline)
+# def invalidate_case_timeline_cache(sender, instance, **kwargs):
+#     """Invalidate case timeline cache."""
+#     cache.delete(f"case_timeline:{instance.case_id}")
 
 
 # ============================================================================
@@ -94,22 +96,16 @@ def invalidate_evidence_caches(sender, instance, **kwargs):
 
     Invalidates:
     - Evidence counts for tenant
-    - Case details (evidence count changed)
-    - Dashboard stats
+    - STANDALONE: Removed case-specific cache invalidation
     """
-    logger.debug(f"Invalidating evidence caches for case {instance.case_id}")
+    logger.debug(f"Invalidating evidence caches")
 
-    cache.delete_many([
-        generate_cache_key(CacheKeys.EVIDENCE_COUNTS, tenant_id=instance.case.tenant_id),
-        f"case_details:{instance.case_id}",
-        f"evidence_list:{instance.case_id}",
-    ])
-
-    # Invalidate tenant dashboard
-    cache.delete(generate_cache_key(
-        CacheKeys.TENANT_STATS,
-        tenant_id=instance.case.tenant_id
-    ))
+    # STANDALONE: Only invalidate if evidence has tenant info
+    if hasattr(instance, 'tenant_id') and instance.tenant_id:
+        cache.delete_many([
+            generate_cache_key(CacheKeys.EVIDENCE_COUNTS, tenant_id=instance.tenant_id),
+            generate_cache_key(CacheKeys.TENANT_STATS, tenant_id=instance.tenant_id),
+        ])
 
 
 # ============================================================================
@@ -123,18 +119,21 @@ def invalidate_lers_caches(sender, instance, **kwargs):
 
     Invalidates:
     - LERS counts by status
-    - Case details (LERS count changed)
     - Dashboard stats
     - Provider dashboard (for company agents)
+
+    STANDALONE: Removed case-specific cache invalidation
     """
     logger.debug(f"Invalidating LERS caches for request {instance.request_number}")
 
-    cache.delete_many([
-        generate_cache_key(CacheKeys.LERS_COUNTS, tenant_id=instance.case.tenant_id, status='ALL'),
-        generate_cache_key(CacheKeys.LERS_COUNTS, tenant_id=instance.case.tenant_id, status=instance.status),
-        f"case_details:{instance.case_id}",
-        f"lers_list:{instance.case_id}",
-    ])
+    # Get tenant from created_by user
+    tenant_id = instance.created_by.tenant_id if instance.created_by else None
+
+    if tenant_id:
+        cache.delete_many([
+            generate_cache_key(CacheKeys.LERS_COUNTS, tenant_id=tenant_id, status='ALL'),
+            generate_cache_key(CacheKeys.LERS_COUNTS, tenant_id=tenant_id, status=instance.status),
+        ])
 
     # Invalidate provider dashboard if applicable
     if instance.provider_tenant_id:
@@ -144,35 +143,35 @@ def invalidate_lers_caches(sender, instance, **kwargs):
         ))
 
     # Invalidate creator's dashboard
-    if instance.created_by_id:
+    if instance.created_by_id and tenant_id:
         cache.delete(generate_cache_key(
             CacheKeys.DASHBOARD_STATS,
-            tenant_id=instance.case.tenant_id,
+            tenant_id=tenant_id,
             user_id=instance.created_by_id
         ))
 
 
 # ============================================================================
-# ENTITY SIGNALS
+# ENTITY SIGNALS - DISABLED FOR STANDALONE
 # ============================================================================
 
-@receiver([post_save, post_delete], sender=ExtractedEntity)
-def invalidate_entity_caches(sender, instance, **kwargs):
-    """
-    Invalidate caches when entities are extracted/updated.
-
-    Invalidates:
-    - Entity graph for case
-    - Entity statistics
-    - Case details
-    """
-    logger.debug(f"Invalidating entity caches for case {instance.case_id}")
-
-    cache.delete_many([
-        generate_cache_key(CacheKeys.ENTITY_GRAPH, case_id=instance.case_id),
-        generate_cache_key(CacheKeys.ENTITY_STATS, case_id=instance.case_id),
-        f"case_details:{instance.case_id}",
-    ])
+# @receiver([post_save, post_delete], sender=ExtractedEntity)
+# def invalidate_entity_caches(sender, instance, **kwargs):
+#     """
+#     Invalidate caches when entities are extracted/updated.
+#
+#     Invalidates:
+#     - Entity graph for case
+#     - Entity statistics
+#     - Case details
+#     """
+#     logger.debug(f"Invalidating entity caches for case {instance.case_id}")
+#
+#     cache.delete_many([
+#         generate_cache_key(CacheKeys.ENTITY_GRAPH, case_id=instance.case_id),
+#         generate_cache_key(CacheKeys.ENTITY_STATS, case_id=instance.case_id),
+#         f"case_details:{instance.case_id}",
+#     ])
 
 
 # ============================================================================
@@ -239,22 +238,23 @@ def invalidate_all_dashboard_caches():
     invalidate_pattern("tenant_stats:*")
 
 
-def invalidate_case_related_caches(case_id: int):
-    """
-    Invalidate all caches related to a specific case.
-
-    Args:
-        case_id: Case ID
-
-    Use Case: Manual cache invalidation via management command.
-    """
-    from apps.cases.models import Case
-    try:
-        case = Case.objects.get(id=case_id)
-        invalidate_case_cache(case_id, case.tenant_id)
-        logger.info(f"Invalidated all caches for case {case.case_number}")
-    except Case.DoesNotExist:
-        logger.error(f"Case {case_id} not found for cache invalidation")
+# STANDALONE: Case-related cache invalidation disabled
+# def invalidate_case_related_caches(case_id: int):
+#     """
+#     Invalidate all caches related to a specific case.
+#
+#     Args:
+#         case_id: Case ID
+#
+#     Use Case: Manual cache invalidation via management command.
+#     """
+#     from apps.cases.models import Case
+#     try:
+#         case = Case.objects.get(id=case_id)
+#         invalidate_case_cache(case_id, case.tenant_id)
+#         logger.info(f"Invalidated all caches for case {case.case_number}")
+#     except Case.DoesNotExist:
+#         logger.error(f"Case {case_id} not found for cache invalidation")
 
 
 # ============================================================================
@@ -280,15 +280,17 @@ def disable_cache_signals():
 
     Usage:
         with disable_cache_signals():
-            # Bulk create cases without triggering cache invalidation
-            Case.objects.bulk_create(cases)
+            # Bulk create LERS requests without triggering cache invalidation
+            LERSRequest.objects.bulk_create(requests)
         # Manually invalidate cache once after bulk operation
         invalidate_all_dashboard_caches()
+
+    STANDALONE: Case-related signals disabled
     """
     from django.db.models import signals
 
-    # Disconnect signals
-    signals.post_save.disconnect(invalidate_case_caches, sender=Case)
+    # Disconnect signals (STANDALONE: only evidence and LERS)
+    # signals.post_save.disconnect(invalidate_case_caches, sender=Case)
     signals.post_save.disconnect(invalidate_evidence_caches, sender=EvidenceFile)
     signals.post_save.disconnect(invalidate_lers_caches, sender=LERSRequest)
 
@@ -297,8 +299,8 @@ def disable_cache_signals():
     try:
         yield
     finally:
-        # Reconnect signals
-        signals.post_save.connect(invalidate_case_caches, sender=Case)
+        # Reconnect signals (STANDALONE: only evidence and LERS)
+        # signals.post_save.connect(invalidate_case_caches, sender=Case)
         signals.post_save.connect(invalidate_evidence_caches, sender=EvidenceFile)
         signals.post_save.connect(invalidate_lers_caches, sender=LERSRequest)
 

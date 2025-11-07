@@ -7,7 +7,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('cases', '0005_remove_case_idx_case_tenant_category_and_more'),
+        ('cases', '0001_initial'),  # STANDALONE: Changed from 0005
         ('lers', '0003_add_performance_indexes'),
     ]
 

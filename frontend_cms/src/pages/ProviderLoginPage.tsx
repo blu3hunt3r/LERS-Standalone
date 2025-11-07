@@ -61,14 +61,14 @@ export default function ProviderLoginPage() {
       setTokens(accessToken, refreshToken || '');
       setUser(response.user);
       
-      console.log('✅ Provider login successful, redirecting to /lers/provider/dashboard');
+      console.log('✅ Provider login successful, redirecting to /lers/provider/inbox');
       toast.success('Login successful!');
 
       // Small delay to ensure state is saved
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Use window.location for a clean navigation
-      window.location.href = '/lers/provider/dashboard';
+      window.location.href = '/lers/provider/inbox';
       
     } catch (err: any) {
       console.error('❌ PROVIDER LOGIN FAILED:', err);
@@ -166,12 +166,33 @@ export default function ProviderLoginPage() {
             </Button>
           </form>
 
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">
+                Are you from law enforcement?
+              </span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate('/lers/portal/login')}
+            className="w-full text-gray-700"
+          >
+            Login to LERS Portal
+          </Button>
+
           <div className="text-center text-sm text-gray-600 border-t pt-4">
             <p className="font-medium mb-2">Demo Credentials:</p>
-            <div className="space-y-1">
-              <p><strong>Provider:</strong> nodal.officer@airtel.com</p>
+            <div className="space-y-1 text-xs">
+              <p><strong>Email:</strong> nodal.officer@airtel.in</p>
               <p><strong>Password:</strong> AirtelPass123</p>
             </div>
+            <p className="text-xs text-gray-500 mt-3">Airtel India - Service Provider Portal</p>
           </div>
         </CardContent>
       </Card>

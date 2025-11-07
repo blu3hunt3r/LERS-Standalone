@@ -39,18 +39,30 @@ class EvidenceFileViewSet(viewsets.ModelViewSet):
         return EvidenceFileSerializer
     
     def get_queryset(self):
-        """Filter evidence by accessible cases."""
+        """Filter evidence by accessible cases and uploaded files."""
         user = self.request.user
-        
-        # Get accessible cases
+
+        # Get accessible cases - in standalone mode, cases are only filtered by tenant
         from apps.cases.models import Case
+        from apps.lers.models import LERSResponse
+
         accessible_cases = Case.objects.filter(
-            models.Q(tenant=user.tenant) |
-            models.Q(shared_with_tenants=user.tenant)
+            tenant=user.tenant
         ).values_list('id', flat=True)
-        
+
+        # Get LERS response files that are related to requests assigned to this user's tenant
+        lers_response_file_ids = LERSResponse.objects.filter(
+            request__case__tenant=user.tenant
+        ).values_list('evidence_files__id', flat=True)
+
+        # Allow users to access:
+        # 1. Files in cases belonging to their tenant (for law enforcement)
+        # 2. Files they uploaded themselves (for providers)
+        # 3. Files attached to LERS responses for requests in their tenant's cases
         return EvidenceFile.objects.filter(
-            case__id__in=accessible_cases,
+            models.Q(case__id__in=accessible_cases) |
+            models.Q(uploaded_by=user) |
+            models.Q(id__in=lers_response_file_ids),
             is_deleted=False
         ).select_related('case', 'uploaded_by')
     
@@ -166,23 +178,26 @@ class EvidenceFileViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def download(self, request, pk=None):
         """
-        Download evidence file (with decryption).
+        Download evidence file with streaming (memory-efficient for large files).
+
+        Query params:
+            ?stream=true - Use streaming response (recommended for large files)
         """
         evidence = self.get_object()
-        
+
         # Check legal hold
         if evidence.legal_hold:
             return Response({
                 'error': 'Evidence is under legal hold and cannot be downloaded'
             }, status=status.HTTP_403_FORBIDDEN)
-        
+
+        # Check if streaming is requested (recommended for large files)
+        use_streaming = request.query_params.get('stream', 'true').lower() == 'true'
+
         try:
-            # Download from vault
-            file_content = get_evidence_vault().download_evidence(
-                storage_path=evidence.storage_path,
-                decrypt=evidence.is_encrypted
-            )
-            
+            from django.http import StreamingHttpResponse, HttpResponse
+            import io
+
             # Create chain of custody record
             ChainOfCustody.objects.create(
                 evidence=evidence,
@@ -193,17 +208,107 @@ class EvidenceFileViewSet(viewsets.ModelViewSet):
                 user_agent=request.META.get('HTTP_USER_AGENT', ''),
                 file_hash_at_action=evidence.sha256_hash
             )
-            
-            # Return file
-            response = FileResponse(file_content, content_type=evidence.mime_type)
-            response['Content-Disposition'] = f'attachment; filename="{evidence.file_name}"'
-            response['Content-Length'] = len(file_content)
-            
+
+            if use_streaming:
+                # Streaming download (memory-efficient)
+                file_generator = get_evidence_vault().download_evidence_streaming(
+                    storage_path=evidence.storage_path,
+                    decrypt=evidence.is_encrypted
+                )
+
+                response = StreamingHttpResponse(
+                    file_generator,
+                    content_type=evidence.mime_type
+                )
+                response['Content-Disposition'] = f'attachment; filename="{evidence.file_name}"'
+                # Note: Content-Length not set for streaming to allow chunked transfer encoding
+            else:
+                # Traditional download (loads entire file in memory)
+                file_content = get_evidence_vault().download_evidence(
+                    storage_path=evidence.storage_path,
+                    decrypt=evidence.is_encrypted
+                )
+
+                # Wrap bytes in BytesIO for proper streaming
+                file_io = io.BytesIO(file_content)
+
+                response = HttpResponse(file_io, content_type=evidence.mime_type)
+                response['Content-Disposition'] = f'attachment; filename="{evidence.file_name}"'
+                response['Content-Length'] = len(file_content)
+
             return response
-            
+
         except Exception as e:
+            logger.error(f"Download failed for evidence {evidence.id}: {str(e)}", exc_info=True)
             return Response({
                 'error': f'Download failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'], url_path='download-url')
+    def download_url(self, request, pk=None):
+        """
+        Generate a pre-signed URL for direct download from storage.
+
+        This is the most efficient method for large files as the client
+        downloads directly from MinIO without going through the backend.
+
+        NOTE: This only works for NON-ENCRYPTED files, as the client
+        would download the encrypted file directly.
+
+        Query params:
+            ?expiry=3600 - URL expiry time in seconds (default: 1 hour)
+        """
+        evidence = self.get_object()
+
+        # Check legal hold
+        if evidence.legal_hold:
+            return Response({
+                'error': 'Evidence is under legal hold and cannot be downloaded'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Pre-signed URLs only work for non-encrypted files
+        if evidence.is_encrypted:
+            return Response({
+                'error': 'Pre-signed URLs are not available for encrypted files. Use the regular download endpoint.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Get expiry time from query params (default: 1 hour)
+            expiry_seconds = int(request.query_params.get('expiry', 3600))
+
+            # Maximum expiry: 7 days
+            if expiry_seconds > 604800:
+                expiry_seconds = 604800
+
+            # Generate pre-signed URL
+            download_url = get_evidence_vault().generate_presigned_download_url(
+                storage_path=evidence.storage_path,
+                expiry_seconds=expiry_seconds
+            )
+
+            # Create chain of custody record
+            ChainOfCustody.objects.create(
+                evidence=evidence,
+                action='DOWNLOAD_URL_GENERATED',
+                actor=request.user,
+                description=f'Download URL generated by {request.user.full_name} (expires in {expiry_seconds}s)',
+                ip_address=self._get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                file_hash_at_action=evidence.sha256_hash
+            )
+
+            return Response({
+                'download_url': download_url,
+                'expires_in_seconds': expiry_seconds,
+                'file_name': evidence.file_name,
+                'file_size': evidence.file_size,
+                'mime_type': evidence.mime_type
+            })
+
+        except Exception as e:
+            logger.error(f"Failed to generate download URL for evidence {evidence.id}: {str(e)}", exc_info=True)
+            return Response({
+                'error': f'Failed to generate download URL: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['post'])

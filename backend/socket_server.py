@@ -307,16 +307,16 @@ async def typing(sid, data):
     try:
         request_id = data.get('request_id')
         is_typing = data.get('is_typing', True)
-        
+
         if not request_id:
             return
-        
+
         user_id = connected_users.get(sid)
         if not user_id:
             return
-        
+
         user = await User.objects.aget(id=user_id)
-        
+
         # Broadcast to room (excluding sender)
         await sio.emit('user_typing', {
             'request_id': request_id,
@@ -324,9 +324,44 @@ async def typing(sid, data):
             'user_name': user.full_name or user.email,
             'is_typing': is_typing
         }, room=f"request_{request_id}", skip_sid=sid)
-        
+
     except Exception as e:
         logger.error(f"❌ typing error: {e}")
+
+
+@sio.event
+async def mark_message_read(sid, data):
+    """
+    Mark a message as read and broadcast to sender.
+    Data: { message_id: str, request_id: str }
+    """
+    try:
+        message_id = data.get('message_id')
+        request_id = data.get('request_id')
+
+        if not message_id or not request_id:
+            return
+
+        # Mark message as read in database
+        message = await LERSMessage.objects.aget(id=message_id)
+        if not message.read_by_receiver:
+            message.read_by_receiver = True
+            message.read_at = timezone.now()
+            await message.asave(update_fields=['read_by_receiver', 'read_at'])
+
+            # Broadcast read receipt to all users in the room
+            await sio.emit('message_read', {
+                'message_id': str(message_id),
+                'request_id': str(request_id),
+                'read_at': message.read_at.isoformat()
+            }, room=f"request_{request_id}")
+
+            logger.info(f"✅ Message {message_id} marked as read")
+
+    except LERSMessage.DoesNotExist:
+        logger.error(f"❌ Message {message_id} not found")
+    except Exception as e:
+        logger.error(f"❌ mark_message_read error: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -159,5 +159,46 @@ export const lersService = {
     })
     return response.data
   },
+
+  /**
+   * Upload response files for a LERS request
+   * Used by providers to submit response data files
+   */
+  async uploadResponseFiles(requestId: string, files: File[], responseText?: string, remarks?: string) {
+    const formData = new FormData()
+
+    // Add all files
+    files.forEach(file => {
+      formData.append('files', file)
+    })
+
+    // Add optional text fields
+    if (responseText) {
+      formData.append('response_text', responseText)
+    }
+    if (remarks) {
+      formData.append('remarks', remarks)
+    }
+
+    const response = await api.post(`/lers/requests/${requestId}/upload-response-files/`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    return response.data
+  },
+
+  /**
+   * Get uploaded response files for a request
+   */
+  async getResponseFiles(requestId: string) {
+    const request = await this.getRequest(requestId)
+    if (request.responses && request.responses.length > 0) {
+      // Get the latest response
+      const latestResponse = request.responses[request.responses.length - 1]
+      return latestResponse.evidence_files || []
+    }
+    return []
+  },
 }
 

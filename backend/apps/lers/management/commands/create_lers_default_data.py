@@ -18,8 +18,7 @@ from django.contrib.auth import get_user_model
 from apps.tenants.models import Tenant
 from apps.lers.models import (
     ProviderDataCatalog,
-    ProviderServiceProfile,
-    LERSRequestType
+    ProviderServiceProfile
 )
 import uuid
 
@@ -77,10 +76,11 @@ class Command(BaseCommand):
 
         superuser = User.objects.create_superuser(
             email='admin@lers.gov.in',
+            username='admin',
             password='Admin@123',  # CHANGE IN PRODUCTION
             phone='+919876543210',
             full_name='LERS System Administrator',
-            role=User.Role.SUPER_ADMIN,
+            role=User.Role.ADMIN,
             is_active=True,
             is_verified=True
         )
@@ -112,10 +112,11 @@ class Command(BaseCommand):
             # Create sample police officer
             officer = User.objects.create_user(
                 email='io@sample.police.gov.in',
+                username='sample_io',
                 password='Officer@123',  # CHANGE IN PRODUCTION
                 phone='+919876543211',
                 full_name='Investigating Officer',
-                role=User.Role.INVESTIGATING_OFFICER,
+                role=User.Role.IO,
                 tenant=tenant,
                 is_active=True,
                 is_verified=True
@@ -135,7 +136,7 @@ class Command(BaseCommand):
         tenant, created = Tenant.objects.get_or_create(
             name='Sample Tech Company',
             defaults={
-                'tenant_type': Tenant.TenantType.DATA_PROVIDER,
+                'tenant_type': Tenant.TenantType.COMPANY,
                 'code': 'SAMPLE_TECH',
                 'is_active': True,
                 'settings': {
@@ -149,10 +150,11 @@ class Command(BaseCommand):
             # Create sample provider admin
             admin = User.objects.create_user(
                 email='compliance@sampletech.com',
+                username='sample_provider',
                 password='Provider@123',  # CHANGE IN PRODUCTION
                 phone='+919876543212',
                 full_name='Compliance Manager',
-                role=User.Role.PROVIDER_ADMIN,
+                role=User.Role.COMPANY_AGENT,
                 tenant=tenant,
                 is_active=True,
                 is_verified=True
@@ -161,18 +163,17 @@ class Command(BaseCommand):
             # Create provider service profile
             profile = ProviderServiceProfile.objects.create(
                 provider_tenant=tenant,
-                primary_contact_name='Compliance Manager',
-                primary_contact_email='compliance@sampletech.com',
-                primary_contact_phone='+919876543212',
-                nodal_officer_name='Nodal Officer',
+                nodal_officer_name='Nodal Officer - Sample Tech',
+                nodal_officer_designation='Chief Compliance Officer',
                 nodal_officer_email='nodal@sampletech.com',
                 nodal_officer_phone='+919876543213',
-                office_hours='Monday-Friday, 9 AM - 6 PM IST',
-                sla_commitment_hours=72,
-                supports_bulk_requests=True,
-                supports_emergency_requests=True,
-                is_verified=True,
-                is_active=True
+                service_hours='Monday-Friday, 9:00 AM - 6:00 PM IST',
+                holidays_affect_sla=True,
+                emergency_contact='+919876543214',
+                iso_certified=False,
+                data_security_certified=True,
+                govt_empaneled=True,
+                service_commitment='Committed to providing timely and accurate data to law enforcement agencies.'
             )
 
             self.stdout.write(self.style.SUCCESS(f'   ✅ Provider tenant created: {tenant.name}'))
@@ -189,64 +190,60 @@ class Command(BaseCommand):
 
         providers = [
             {
-                'provider_name': 'Sample Tech Company',
+                'name': 'Call Detail Records (CDR) - 6 months',
                 'provider_tenant': provider_tenant,
-                'data_category': ProviderDataCatalog.DataCategory.TELECOM,
-                'description': 'Telecom data provider - Call records, SMS, Location data',
-                'available_data_types': [
-                    'Call Detail Records (CDR)',
-                    'SMS Records',
-                    'Cell Tower Location',
-                    'IMEI Information'
-                ],
-                'legal_basis_required': ['Court Order', 'Section 91 CrPC', 'Section 69 IT Act'],
-                'typical_response_time_hours': 72,
-                'supports_emergency_requests': True,
-                'pricing_model': 'Government rate card',
-                'is_active': True
+                'category': ProviderDataCatalog.DataCategory.TELECOM,
+                'description': 'Complete call detail records including incoming, outgoing calls with tower locations',
+                'sla_turnaround_hours': 72,  # 3 days
+                'sla_business_hours_only': True,
+                'required_legal_mandate': 'Section 91 CrPC or Section 69 IT Act',
+                'requires_court_order': False,
+                'requires_pan_verification': False,
+                'output_format': ProviderDataCatalog.OutputFormat.EXCEL,
+                'output_description': 'Excel file with call records, tower details, and IMEI information',
+                'is_active': True,
+                'is_featured': True,
+                'notes_for_law_enforcement': 'Please provide subscriber number, date range (max 6 months), and legal mandate details'
             },
             {
-                'provider_name': 'Sample Bank',
+                'name': 'Bank Account Statement - 6 months',
                 'provider_tenant': provider_tenant,
-                'data_category': ProviderDataCatalog.DataCategory.FINANCIAL,
-                'description': 'Banking data provider - Account details, Transaction history',
-                'available_data_types': [
-                    'Account Information',
-                    'Transaction History',
-                    'KYC Documents',
-                    'Beneficiary Details'
-                ],
-                'legal_basis_required': ['Court Order', 'Section 91 CrPC'],
-                'typical_response_time_hours': 120,  # 5 days
-                'supports_emergency_requests': True,
-                'pricing_model': 'Free for law enforcement',
-                'is_active': True
+                'category': ProviderDataCatalog.DataCategory.BANKING,
+                'description': 'Complete bank account statement with transaction details and KYC information',
+                'sla_turnaround_hours': 120,  # 5 days
+                'sla_business_hours_only': True,
+                'required_legal_mandate': 'Section 91 CrPC + Court Order',
+                'requires_court_order': True,
+                'requires_pan_verification': True,
+                'output_format': ProviderDataCatalog.OutputFormat.PDF,
+                'output_description': 'PDF statement with transaction history and account holder KYC',
+                'is_active': True,
+                'is_featured': True,
+                'notes_for_law_enforcement': 'Requires court order. Provide account number or PAN for search'
             },
             {
-                'provider_name': 'Sample Social Media Platform',
+                'name': 'Social Media User Data',
                 'provider_tenant': provider_tenant,
-                'data_category': ProviderDataCatalog.DataCategory.SOCIAL_MEDIA,
-                'description': 'Social media data provider - User profiles, Posts, Messages',
-                'available_data_types': [
-                    'User Profile Information',
-                    'Post History',
-                    'Message Logs',
-                    'IP Address Logs',
-                    'Login History'
-                ],
-                'legal_basis_required': ['Court Order', 'Section 69 IT Act', 'Section 69B IT Act'],
-                'typical_response_time_hours': 168,  # 7 days
-                'supports_emergency_requests': True,
-                'pricing_model': 'Free for law enforcement',
-                'is_active': True
+                'category': ProviderDataCatalog.DataCategory.SOCIAL,
+                'description': 'User profile, posts, messages, and IP logs from social media platform',
+                'sla_turnaround_hours': 168,  # 7 days
+                'sla_business_hours_only': True,
+                'required_legal_mandate': 'Section 69 IT Act or Section 69B IT Act',
+                'requires_court_order': True,
+                'requires_pan_verification': False,
+                'output_format': ProviderDataCatalog.OutputFormat.MIXED,
+                'output_description': 'ZIP archive containing JSON data, images, and activity logs',
+                'is_active': True,
+                'is_featured': False,
+                'notes_for_law_enforcement': 'Provide user ID, email, or phone number. Include specific date range for logs'
             }
         ]
 
         created_count = 0
         for provider_data in providers:
             _, created = ProviderDataCatalog.objects.get_or_create(
-                provider_name=provider_data['provider_name'],
-                data_category=provider_data['data_category'],
+                provider_tenant=provider_data['provider_tenant'],
+                name=provider_data['name'],
                 defaults=provider_data
             )
             if created:

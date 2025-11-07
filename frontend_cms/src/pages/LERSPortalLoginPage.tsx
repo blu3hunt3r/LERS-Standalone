@@ -143,16 +143,16 @@ export default function LERSPortalLoginPage() {
 
             <Button
               type="submit"
-              className="w-full bg-slate-700 hover:bg-slate-800"
+              className="w-full bg-slate-700 hover:bg-slate-800 text-white"
               disabled={loading}
             >
               {loading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   Signing in...
                 </>
               ) : (
-                'Sign in to LERS Portal'
+                'Sign In'
               )}
             </Button>
           </form>
@@ -163,32 +163,27 @@ export default function LERSPortalLoginPage() {
             </div>
             <div className="relative flex justify-center text-sm">
               <span className="px-2 bg-white text-gray-500">
-                Other portals
+                Are you a service provider?
               </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => navigate('/login')}
-              className="text-gray-700"
-            >
-              CMS Portal
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => navigate('/lers/provider/login')}
-              className="text-gray-700"
-            >
-              Provider Portal
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate('/lers/provider/login')}
+            className="w-full text-gray-700"
+          >
+            Login to Provider Portal
+          </Button>
 
-          <div className="text-center text-xs text-gray-500 pt-4 border-t">
-            <p>Secure access for law enforcement personnel</p>
+          <div className="text-center text-sm text-gray-600 border-t pt-4">
+            <p className="font-medium mb-2">Demo Credentials:</p>
+            <div className="space-y-1 text-xs">
+              <p><strong>Email:</strong> io@sample.police.gov.in</p>
+              <p><strong>Password:</strong> TestPass123</p>
+            </div>
+            <p className="text-xs text-gray-500 mt-3">Law Enforcement Portal</p>
           </div>
         </CardContent>
       </Card>

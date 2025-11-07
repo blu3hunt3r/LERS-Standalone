@@ -1,23 +1,24 @@
 /**
- * LERS Request Chat Component
+ * LERS Request Chat Component - WhatsApp Style
  * Real-time chat interface for IO-Provider communication
  * Features: Messages, Typing indicators, Presence, Read receipts, File attachments
  */
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { lersService } from '../../services/lersService'
-import { useChatRoom, useMessageListener, useTypingListener, usePresence } from '../../hooks/useSocket'
-import { 
-  Send, 
-  Paperclip, 
-  User, 
-  CheckCheck, 
+import { useChatRoom, useMessageListener, useTypingListener, usePresence, useSocket } from '../../hooks/useSocket'
+import {
+  Send,
+  Paperclip,
+  User,
+  Check,
+  CheckCheck,
   Circle,
   Clock,
   AlertCircle,
   X
 } from 'lucide-react'
-import { formatDistanceToNow, format } from 'date-fns'
+import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import toast from 'react-hot-toast'
 
 interface LERSRequestChatProps {
@@ -36,6 +37,7 @@ interface Message {
   message_type: 'TEXT' | 'FILE' | 'SYSTEM'
   message_text: string
   attachments: Array<{url: string; filename: string; size?: number; type?: string}>
+  read_by_receiver: boolean
   created_at: string
   metadata: Record<string, any>
 }
@@ -55,14 +57,15 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
   const [attachments, setAttachments] = useState<Array<{url: string; filename: string}>>([])
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([])
   const [localMessages, setLocalMessages] = useState<Message[]>([])
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  
+
   const queryClient = useQueryClient()
   const { sendChatMessage, notifyTyping, connected } = useChatRoom(requestId)
   const { onUserOnline, onUserOffline } = usePresence()
+  const { socket } = useSocket()
 
   // Fetch messages from API
   const { data: messagesData, isLoading } = useQuery({
@@ -103,26 +106,64 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
     })
   })
 
+  // Listen for message read events
+  useEffect(() => {
+    if (!requestId || !socket) return
+
+    const handleMessageRead = (data: { message_id: string; read_at: string }) => {
+      console.log('✓✓ Message marked as read:', data.message_id)
+      setLocalMessages(prev => prev.map(msg =>
+        msg.id === data.message_id
+          ? { ...msg, read_by_receiver: true }
+          : msg
+      ))
+    }
+
+    socket.on('message_read', handleMessageRead)
+
+    return () => {
+      socket.off('message_read', handleMessageRead)
+    }
+  }, [requestId, socket])
+
+  // Auto-mark messages as read when they appear
+  useEffect(() => {
+    if (!socket || !requestId || !connected) return
+
+    // Mark all unread messages from other users as read
+    const unreadMessages = localMessages.filter(msg => {
+      const alignment = getMessageAlignment(msg)
+      return alignment === 'left' && !msg.read_by_receiver
+    })
+
+    unreadMessages.forEach(msg => {
+      socket.emit('mark_message_read', {
+        message_id: msg.id,
+        request_id: requestId
+      })
+    })
+  }, [localMessages, socket, requestId, connected])
+
   // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: (data: { message_text: string; attachments: any[] }) =>
       lersService.sendMessage(requestId, data),
     onSuccess: (data) => {
       console.log('✅ Message sent successfully:', data)
-      
+
       // Add to local messages optimistically
       setLocalMessages(prev => [...prev, data])
-      
+
       // Broadcast via WebSocket
       sendChatMessage(data.id)
-      
+
       // Clear input
       setMessageText('')
       setAttachments([])
-      
+
       // Scroll to bottom
       scrollToBottom()
-      
+
       // Invalidate cache
       queryClient.invalidateQueries({ queryKey: ['lers-messages', requestId] })
     },
@@ -144,12 +185,12 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
   const handleTyping = () => {
     // Notify other users that I'm typing
     notifyTyping(true)
-    
+
     // Clear previous timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current)
     }
-    
+
     // Set new timeout to stop typing after 3 seconds
     typingTimeoutRef.current = setTimeout(() => {
       notifyTyping(false)
@@ -213,16 +254,30 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
 
   const getMessageBubbleStyle = (message: Message) => {
     const alignment = getMessageAlignment(message)
-    
+
     if (message.sender_type === 'SYSTEM') {
       return 'bg-gray-100 text-gray-600 text-sm italic'
     }
-    
+
     if (alignment === 'right') {
-      return 'bg-slate-700 text-white'
+      // Sent messages - light grey background
+      return 'bg-gray-100 text-gray-900 border border-gray-200'
     }
-    
-    return 'bg-gray-100 text-gray-900 border border-gray-200'
+
+    // Received messages - white with border
+    return 'bg-white text-gray-900 border border-gray-200'
+  }
+
+  // Show avatar on EVERY message
+  const shouldShowAvatar = (message: Message) => {
+    return true // Always show avatar
+  }
+
+  // Get avatar initials and color
+  const getAvatarInfo = (message: Message) => {
+    const initial = message.sender_name.charAt(0).toUpperCase()
+    const color = message.sender_type === 'IO' ? 'bg-gray-700' : 'bg-gray-700'
+    return { initial, color }
   }
 
   const renderPresenceIndicator = (status: string) => {
@@ -231,7 +286,7 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
       AWAY: 'bg-yellow-500',
       OFFLINE: 'bg-slate-500',
     }
-    
+
     return (
       <div className={`w-2 h-2 rounded-full ${colors[status as keyof typeof colors] || 'bg-slate-500'}`} />
     )
@@ -240,15 +295,15 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-700" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900" />
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-[600px] bg-white rounded-lg border border-gray-200">
+    <div className="flex flex-col h-[600px] bg-white rounded-lg border-2 border-gray-300 shadow-md">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+      <div className="flex items-center justify-between p-4 border-b-2 border-gray-300 bg-gray-50">
         <div>
           <h3 className="font-semibold text-gray-900">
             Chat - {requestNumber}
@@ -267,14 +322,14 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
             )}
           </p>
         </div>
-        
+
         <div className="text-xs text-gray-500">
           {localMessages.length} message{localMessages.length !== 1 ? 's' : ''}
         </div>
       </div>
 
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+      <div className="flex-1 overflow-y-auto p-4 space-y-1 bg-gray-50">
         {localMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <User className="w-16 h-16 text-gray-400 mb-4" />
@@ -286,35 +341,38 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
         ) : (
           localMessages.map((message, index) => {
             const alignment = getMessageAlignment(message)
-            const showAvatar = index === 0 || 
-              localMessages[index - 1].sender_id !== message.sender_id
-            
+            const { initial, color } = getAvatarInfo(message)
+
             return (
               <div
                 key={message.id}
-                className={`flex ${alignment === 'right' ? 'justify-end' : alignment === 'center' ? 'justify-center' : 'justify-start'}`}
+                className={`flex ${alignment === 'right' ? 'justify-end' : alignment === 'center' ? 'justify-center' : 'justify-start'} mt-2`}
               >
                 <div className={`flex items-end gap-2 max-w-[70%] ${alignment === 'right' ? 'flex-row-reverse' : ''}`}>
-                  {/* Avatar */}
-                  {showAvatar && alignment !== 'center' && (
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-xs font-bold">
-                      {message.sender_name.charAt(0).toUpperCase()}
+                  {/* Avatar - Show on EVERY message */}
+                  {alignment !== 'center' && (
+                    <div
+                      className={`flex-shrink-0 w-8 h-8 rounded-full ${color} flex items-center justify-center text-white text-xs font-semibold cursor-pointer`}
+                      title={message.sender_name}
+                    >
+                      {initial}
                     </div>
                   )}
-                  
+
                   {/* Message Bubble */}
-                  <div>
-                    {showAvatar && alignment !== 'center' && (
-                      <p className={`text-xs text-gray-600 mb-1 ${alignment === 'right' ? 'text-right' : 'text-left'}`}>
-                        {message.sender_name}
-                      </p>
-                    )}
-                    
-                    <div className={`rounded-lg px-4 py-2 ${getMessageBubbleStyle(message)}`}>
+                  <div className="flex flex-col">
+
+                    <div
+                      className={`
+                        rounded-lg px-3 py-2
+                        ${getMessageBubbleStyle(message)}
+                        ${alignment === 'right' ? 'rounded-br-sm' : alignment === 'left' ? 'rounded-bl-sm' : ''}
+                      `}
+                    >
                       <p className="text-sm whitespace-pre-wrap break-words">
                         {message.message_text}
                       </p>
-                      
+
                       {/* Attachments */}
                       {message.attachments && message.attachments.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -324,7 +382,7 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
                               href={att.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex items-center gap-2 text-xs underline"
+                              className="flex items-center gap-2 text-xs underline hover:opacity-80"
                             >
                               <Paperclip className="w-3 h-3" />
                               {att.filename}
@@ -332,15 +390,22 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
                           ))}
                         </div>
                       )}
-                      
-                      {/* Timestamp & Status */}
-                      <div className={`flex items-center gap-2 mt-1 text-xs ${alignment === 'right' ? 'justify-end' : 'justify-start'} opacity-70`}>
-                        <Clock className="w-3 h-3" />
-                        <span>{formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}</span>
-                        
-                        {/* Read receipts for sent messages */}
+
+                      {/* Timestamp & Read Receipts - WhatsApp style */}
+                      <div className={`flex items-center gap-1 mt-1 text-xs ${alignment === 'right' ? 'justify-end text-gray-400' : 'justify-start text-gray-600'}`}>
+                        <span className="text-[11px]">
+                          {format(new Date(message.created_at), 'HH:mm')}
+                        </span>
+
+                        {/* Read receipts - only for sent messages (right-aligned) */}
                         {alignment === 'right' && (
-                          <CheckCheck className="w-3 h-3" />
+                          message.read_by_receiver ? (
+                            // Double blue check - message read
+                            <CheckCheck className="w-4 h-4 text-blue-400" strokeWidth={2.5} />
+                          ) : (
+                            // Single grey check - message delivered
+                            <Check className="w-4 h-4 text-gray-400" strokeWidth={2.5} />
+                          )
                         )}
                       </div>
                     </div>
@@ -350,27 +415,27 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
             )
           })
         )}
-        
+
         {/* Typing Indicator */}
         {typingUsers.length > 0 && (
-          <div className="flex items-center gap-2 text-slate-400 text-sm">
+          <div className="flex items-center gap-2 text-gray-600 text-sm ml-2">
             <div className="flex gap-1">
-              <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
-            <span>
+            <span className="text-xs italic">
               {typingUsers.map(u => u.user_name).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
             </span>
           </div>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 
       {/* Attachments Preview */}
       {attachments.length > 0 && (
-        <div className="px-4 py-2 border-t border-gray-200 bg-white">
+        <div className="px-4 py-2 border-t-2 border-gray-300 bg-white">
           <div className="flex flex-wrap gap-2">
             {attachments.map((att, index) => (
               <div key={index} className="flex items-center gap-2 bg-gray-100 rounded px-3 py-1.5 text-sm">
@@ -389,7 +454,7 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
       )}
 
       {/* Input Area */}
-      <div className="p-4 border-t border-gray-200 bg-white">
+      <div className="p-4 border-t-2 border-gray-300 bg-white">
         <div className="flex items-end gap-2">
           {/* File Attach Button */}
           <input
@@ -416,8 +481,8 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
                 handleTyping()
               }}
               onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
-              className="w-full px-4 py-2 bg-white text-gray-900 rounded-lg border border-gray-300 focus:border-slate-500 focus:ring-1 focus:ring-slate-500 focus:outline-none resize-none"
+              placeholder="Type a message"
+              className="w-full px-4 py-2 bg-white text-gray-900 rounded-lg border border-gray-300 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none resize-none"
               rows={2}
               disabled={!connected || sendMessageMutation.isPending}
             />
@@ -427,7 +492,7 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
           <button
             onClick={handleSendMessage}
             disabled={(!messageText.trim() && attachments.length === 0) || !connected || sendMessageMutation.isPending}
-            className="p-3 bg-slate-700 hover:bg-slate-800 disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg transition-colors"
+            className="p-3 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg transition-colors"
           >
             {sendMessageMutation.isPending ? (
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -436,7 +501,7 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
             )}
           </button>
         </div>
-        
+
         {!connected && (
           <p className="text-xs text-yellow-600 mt-2 flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
@@ -449,6 +514,3 @@ const LERSRequestChat: React.FC<LERSRequestChatProps> = ({
 }
 
 export default LERSRequestChat
-
-
-

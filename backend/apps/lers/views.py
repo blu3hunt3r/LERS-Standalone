@@ -1,6 +1,7 @@
 """
 Views for LERS (Law Enforcement Request System).
 """
+import logging
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,6 +9,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.db import models
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+
+logger = logging.getLogger(__name__)
 from .models import (
     LERSRequest, LERSResponse, LERSApprovalWorkflow, LERSTemplate,
     LERSMessage, UserPresence, LERSNotification,
@@ -25,7 +28,7 @@ from .serializers import (
     ProviderServiceProfileSerializer, CatalogBrowseSerializer
 )
 from apps.core.permissions import IsIO, IsApprover, IsCompanyAgent
-from apps.cases.models import CaseTimeline
+# CaseTimeline import moved to conditional blocks where needed
 from .providers import (
     find_providers_for_entity_type, 
     get_provider, 
@@ -75,17 +78,10 @@ class LERSRequestViewSet(viewsets.ModelViewSet):
                 is_deleted=False
             ).exclude(status='DRAFT')
         else:
-            # Police officers see requests from their cases AND standalone requests
-            from apps.cases.models import Case
-            accessible_cases = Case.objects.filter(
-                models.Q(tenant=user.tenant) |
-                models.Q(shared_with_tenants=user.tenant)
-            ).values_list('id', flat=True)
-
-            # Include both case-linked AND standalone (case=None) requests
+            # Police officers in standalone mode - see requests from their tenant
+            # In standalone LERS, all requests are case=None (no case management)
             return LERSRequest.objects.filter(
-                models.Q(case__id__in=accessible_cases) |
-                models.Q(case__isnull=True, created_by__tenant=user.tenant),
+                created_by__tenant=user.tenant,
                 is_deleted=False
             )
     
@@ -296,17 +292,16 @@ class LERSRequestViewSet(viewsets.ModelViewSet):
         if serializer.is_valid():
             response_obj = serializer.save(
                 request=lers_request,
-                submitted_by=request.user,
-                tenant=lers_request.tenant
+                submitted_by=request.user
             )
             
             # Update request status
             lers_request.status = 'RESPONSE_UPLOADED'
-            lers_request.response_received_at = timezone.now()
             lers_request.save()
             
             # Create case timeline event
             if lers_request.case:
+                from apps.cases.models import CaseTimeline
                 CaseTimeline.objects.create(
                     case=lers_request.case,
                     event_type='LERS_RESPONSE_RECEIVED',
@@ -318,6 +313,120 @@ class LERSRequestViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    @action(detail=True, methods=['post'], url_path='upload-response-files', permission_classes=[IsCompanyAgent])
+    def upload_response_files(self, request, pk=None):
+        """
+        Upload response files for a LERS request.
+        Accepts multiple files via multipart/form-data.
+
+        POST /api/v1/lers/requests/{id}/upload-response-files/
+        Files: files[]
+        Optional: response_text, remarks
+        """
+        lers_request = self.get_object()
+
+        # Verify user belongs to provider tenant
+        if lers_request.provider_tenant != request.user.tenant:
+            return Response({
+                'error': 'You are not authorized to upload files for this request'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if lers_request.status not in ['SUBMITTED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'RESPONSE_UPLOADED', 'COMPLETED']:
+            return Response({
+                'error': f'Cannot upload response for request in {lers_request.status} status'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get or create a response for this request
+        from apps.lers.models import LERSResponse
+        response_obj = lers_request.responses.filter(submitted_by=request.user).first()
+
+        if not response_obj:
+            # Create new response
+            response_number = f"{lers_request.request_number}-RESP-{lers_request.responses.count() + 1:02d}"
+            response_obj = LERSResponse.objects.create(
+                request=lers_request,
+                response_number=response_number,
+                submitted_by=request.user,
+                response_text=request.data.get('response_text', ''),
+                remarks=request.data.get('remarks', ''),
+                status='RECEIVED'
+            )
+
+        # Get uploaded files
+        files = request.FILES.getlist('files')
+        if not files:
+            return Response({
+                'error': 'No files provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Ensure request has a case for evidence linking
+        if not lers_request.case:
+            # Create a minimal case for standalone LERS
+            from apps.cases.models import Case
+            case, created = Case.objects.get_or_create(
+                case_number=f'LERS-{lers_request.request_number}',
+                defaults={
+                    'ack_number': f'ACK-{lers_request.request_number}',
+                    'tenant': request.user.tenant,
+                    'is_deleted': False
+                }
+            )
+            lers_request.case = case
+            lers_request.save(update_fields=['case'])
+
+        # Upload files as evidence
+        from apps.evidence.services import EvidenceService
+        uploaded_files = []
+        errors = []
+
+        for uploaded_file in files:
+            try:
+                evidence = EvidenceService.upload_evidence(
+                    case=lers_request.case,
+                    uploaded_file=uploaded_file,
+                    uploaded_by=request.user,
+                    source='LERS_RESPONSE',
+                    description=f'Response file for {lers_request.request_number}',
+                    tags=['lers_response', lers_request.request_type],
+                    ip_address=request.META.get('REMOTE_ADDR'),
+                    user_agent=request.META.get('HTTP_USER_AGENT'),
+                    encrypt=True,
+                    auto_sign=True
+                )
+
+                # Link evidence to response
+                evidence.lers_response = response_obj
+                evidence.save(update_fields=['lers_response'])
+
+                uploaded_files.append({
+                    'id': str(evidence.id),
+                    'file_name': evidence.file_name,
+                    'file_size': evidence.file_size,
+                    'file_type': evidence.file_type,
+                    'sha256_hash': evidence.sha256_hash
+                })
+
+            except Exception as e:
+                logger.error(f"Failed to upload file {uploaded_file.name}: {str(e)}")
+                errors.append({
+                    'file_name': uploaded_file.name,
+                    'error': str(e)
+                })
+
+        # Update request status
+        if uploaded_files:
+            lers_request.status = 'RESPONSE_UPLOADED'
+            lers_request.save(update_fields=['status'])
+
+        return Response({
+            'message': f'{len(uploaded_files)} file(s) uploaded successfully',
+            'response_id': str(response_obj.id),
+            'response_number': response_obj.response_number,
+            'uploaded_files': uploaded_files,
+            'errors': errors if errors else None,
+            'total_files': len(uploaded_files)
+        }, status=status.HTTP_201_CREATED if uploaded_files else status.HTTP_400_BAD_REQUEST)
+
     @action(detail=True, methods=['get'])
     def workflow(self, request, pk=None):
         """
@@ -420,8 +529,8 @@ class LERSRequestViewSet(viewsets.ModelViewSet):
         
         Returns pre-filled request with provider info and compliance check.
         """
-        from apps.entities.models import ExtractedEntity
-        from apps.cases.models import Case, EvidenceFile
+        # from apps.entities.models import ExtractedEntity  # REMOVED: Not needed
+        # from apps.cases.models import Case, EvidenceFile  # DISABLED FOR STANDALONE
         from datetime import datetime, timedelta
         
         entity_hash = request.data.get('entity_hash')

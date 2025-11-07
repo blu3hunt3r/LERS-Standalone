@@ -19,10 +19,10 @@ export default function CreateLERSRequestPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const preselectedCaseId = searchParams.get('caseId') || ''
-  
+  const prefilledFirNumber = searchParams.get('firNumber') || ''
+
   const [formData, setFormData] = useState<any>({
-    case_id: preselectedCaseId, // Pre-fill with case ID from URL
+    fir_number: prefilledFirNumber, // Pre-fill FIR number from URL
     request_type: '',
     priority: 'NORMAL',
     provider: '',
@@ -39,11 +39,7 @@ export default function CreateLERSRequestPage() {
   const [selectedProvider, setSelectedProvider] = useState<any>(null)
   const [selectedCapability, setSelectedCapability] = useState<any>(null)
 
-  // Fetch available cases
-  const { data: casesData, isLoading: casesLoading } = useQuery({
-    queryKey: ['cases'],
-    queryFn: () => caseService.getCases({ limit: 100 })
-  })
+  // No need to fetch cases - FIR is a text input now
 
   // Fetch all providers
   const { data: providersData, isLoading: providersLoading } = useQuery({
@@ -56,21 +52,12 @@ export default function CreateLERSRequestPage() {
     onSuccess: (data) => {
       console.log('✅ LERS Request created:', data)
       toast.success(`LERS Request ${data.request_number || 'created'} successfully! 🎉`)
-      
-      // Invalidate LERS requests cache for this case
-      if (formData.case_id) {
-        queryClient.invalidateQueries({ queryKey: ['lers-requests', formData.case_id] })
-        queryClient.invalidateQueries({ queryKey: ['lers-requests'] })
-      }
-      
-      // Navigate to the case's LERS tab
-      if (formData.case_id) {
-        navigate(`/cases/${formData.case_id}?tab=lers`)
-      } else if (data.id) {
-        navigate(`/lers/portal/requests/${data.id}`)
-      } else {
-        navigate('/cases')
-      }
+
+      // Invalidate LERS requests cache
+      queryClient.invalidateQueries({ queryKey: ['lersRequests'] })
+
+      // Navigate to requests list
+      navigate('/lers/portal/requests')
     },
     onError: (error: any) => {
       const message = error?.response?.data?.detail || error?.response?.data?.message || 'Failed to create request'
@@ -123,9 +110,9 @@ export default function CreateLERSRequestPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const submitData: any = {
-      case: formData.case_id,
+      fir_number: formData.fir_number,
       request_type: formData.request_type,
       priority: formData.priority,
       provider: formData.provider,
@@ -285,7 +272,7 @@ export default function CreateLERSRequestPage() {
     }
   }
 
-  if (providersLoading || casesLoading) {
+  if (providersLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -316,41 +303,36 @@ export default function CreateLERSRequestPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Case Selection */}
-          <Card className="border border-gray-200">
+          {/* FIR Input */}
+          <Card className="border-2 border-gray-300">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-normal flex items-center gap-2">
-                <span className="text-slate-700">📁</span> Case Information
+                <span className="text-slate-700">📁</span> FIR Information
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Case <span className="text-red-500">*</span>
+                  FIR Number <span className="text-red-500">*</span>
                 </label>
-                <select
-                  name="case_id"
+                <input
+                  type="text"
+                  name="fir_number"
                   required
-                  value={formData.case_id}
+                  value={formData.fir_number}
                   onChange={handleChange}
+                  placeholder="e.g., FIR-2024-MUM-001"
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select a case...</option>
-                  {casesData?.results.map((caseItem) => (
-                    <option key={caseItem.id} value={caseItem.id}>
-                      {caseItem.case_number} - {caseItem.title}
-                    </option>
-                  ))}
-                </select>
+                />
                 <p className="text-xs text-gray-500 mt-1">
-                  Choose the case for which you need data from the provider
+                  Enter the FIR number for which you need data from the provider
                 </p>
               </div>
             </CardContent>
           </Card>
 
           {/* Provider Selection - Dropdown */}
-          <Card className="border border-gray-200">
+          <Card className="border-2 border-gray-300">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-normal flex items-center gap-2">
                 <Building2 className="h-4 w-4 text-slate-700" /> Service Provider
@@ -407,7 +389,7 @@ export default function CreateLERSRequestPage() {
 
           {/* Data Type Selection (Tiles) - Only shown after provider is selected */}
           {selectedProvider && (
-            <Card className="border border-gray-200">
+            <Card className="border-2 border-gray-300">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-normal flex items-center gap-2">
                   <span className="text-slate-700">📋</span> Available Data from {selectedProvider.name}
@@ -459,7 +441,7 @@ export default function CreateLERSRequestPage() {
 
           {/* Provider-Specific Data Points */}
           {selectedCapability && selectedCapability.data_points.length > 0 && (
-            <Card className="border border-gray-200">
+            <Card className="border-2 border-gray-300">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-normal flex items-center gap-2">
                   <Info className="h-4 w-4 text-slate-700" /> Provider-Specific Information
@@ -472,7 +454,7 @@ export default function CreateLERSRequestPage() {
           )}
 
           {/* Request Details */}
-          <Card className="border border-gray-200">
+          <Card className="border-2 border-gray-300">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-normal flex items-center gap-2">
                 <span className="text-slate-700">🎯</span> Request Details

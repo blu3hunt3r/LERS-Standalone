@@ -110,6 +110,7 @@ class ChainOfCustody(BaseModel):
         UPLOADED = 'UPLOADED', 'Uploaded'
         VIEWED = 'VIEWED', 'Viewed'
         DOWNLOADED = 'DOWNLOADED', 'Downloaded'
+        DOWNLOAD_URL_GENERATED = 'DOWNLOAD_URL_GENERATED', 'Download URL Generated'
         EDITED = 'EDITED', 'Edited'
         SHARED = 'SHARED', 'Shared'
         VERIFIED = 'VERIFIED', 'Integrity Verified'
@@ -121,7 +122,7 @@ class ChainOfCustody(BaseModel):
         related_name='custody_records'
     )
     
-    action = models.CharField(max_length=20, choices=Action.choices)
+    action = models.CharField(max_length=30, choices=Action.choices)
     actor = models.ForeignKey(
         'authentication.User',
         on_delete=models.SET_NULL,

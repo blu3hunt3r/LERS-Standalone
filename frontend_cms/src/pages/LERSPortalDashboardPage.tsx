@@ -10,7 +10,9 @@ import {
   AlertCircle,
   TrendingUp,
   Plus,
-  ArrowRight
+  ArrowRight,
+  Building,
+  Calendar
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -63,7 +65,7 @@ export default function LERSPortalDashboardPage() {
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">REQUEST OVERVIEW</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             {/* Total Requests */}
-            <Card className="bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+            <Card className="bg-white border-2 border-gray-300 shadow-sm hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -78,7 +80,7 @@ export default function LERSPortalDashboardPage() {
             </Card>
 
             {/* Pending Approval */}
-            <Card className="bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+            <Card className="bg-white border-2 border-gray-300 shadow-sm hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -93,7 +95,7 @@ export default function LERSPortalDashboardPage() {
             </Card>
 
             {/* In Progress */}
-            <Card className="bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+            <Card className="bg-white border-2 border-gray-300 shadow-sm hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -108,7 +110,7 @@ export default function LERSPortalDashboardPage() {
             </Card>
 
             {/* Completed */}
-            <Card className="bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+            <Card className="bg-white border-2 border-gray-300 shadow-sm hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -123,7 +125,7 @@ export default function LERSPortalDashboardPage() {
             </Card>
 
             {/* SLA Breached */}
-            <Card className="bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+            <Card className="bg-white border-2 border-gray-300 shadow-sm hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -172,39 +174,79 @@ export default function LERSPortalDashboardPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {recentRequests.map((request: any) => (
-                    <div
-                      key={request.id}
-                      className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition-all"
-                      onClick={() => navigate(`/lers/portal/requests/${request.id}`)}
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="font-semibold text-gray-900">{request.request_number}</span>
-                          <Badge className={`${getStatusColor(request.status)} border px-2.5 py-0.5 text-xs font-medium`}>
-                            {request.status_display}
-                          </Badge>
-                          {request.sla_breached && (
-                            <Badge className="bg-red-50 text-red-700 border-red-200 border px-2.5 py-0.5 text-xs font-medium">
-                              SLA Breached
-                            </Badge>
-                          )}
+                <div className="space-y-2">
+                  {recentRequests.map((request: any) => {
+                    const daysUntilDue = request.sla_due_date
+                      ? Math.ceil((new Date(request.sla_due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                      : null;
+
+                    return (
+                      <div
+                        key={request.id}
+                        className="flex items-center gap-4 p-3 border-2 border-gray-300 rounded-lg hover:border-gray-400 hover:bg-gray-50 cursor-pointer transition-all"
+                        onClick={() => navigate(`/lers/portal/requests/${request.id}`)}
+                      >
+                        {/* Icon */}
+                        <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center flex-shrink-0">
+                          <FileText className="h-4 w-4 text-slate-700" />
                         </div>
-                        <p className="text-sm text-gray-600">{request.provider} • {request.request_type_display}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-gray-900">
-                          {new Date(request.created_at).toLocaleDateString()}
-                        </p>
-                        {request.sla_due_date && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            Due: {new Date(request.sla_due_date).toLocaleDateString()}
+
+                        {/* Request Number & Type */}
+                        <div className="min-w-[180px]">
+                          <p className="text-sm font-semibold text-gray-900">{request.request_number}</p>
+                          <p className="text-xs text-gray-500">{request.request_type_display}</p>
+                        </div>
+
+                        {/* Provider */}
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <Building className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                          <p className="text-sm text-gray-700 truncate">{request.provider}</p>
+                        </div>
+
+                        {/* Created Date */}
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                          <p className="text-xs text-gray-600">
+                            {new Date(request.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </p>
+                        </div>
+
+                        {/* SLA Due */}
+                        {request.sla_due_date && (
+                          <div className="flex items-center gap-1.5">
+                            <Clock className={`h-3.5 w-3.5 flex-shrink-0 ${
+                              request.sla_breached ? 'text-red-500' :
+                              daysUntilDue && daysUntilDue <= 1 ? 'text-orange-500' :
+                              'text-blue-500'
+                            }`} />
+                            <p className={`text-xs font-medium ${
+                              request.sla_breached ? 'text-red-600' :
+                              daysUntilDue && daysUntilDue <= 1 ? 'text-orange-600' :
+                              'text-gray-600'
+                            }`}>
+                              {request.sla_breached ? 'OVERDUE' :
+                               daysUntilDue === 0 ? 'Today' :
+                               daysUntilDue === 1 ? 'Tomorrow' :
+                               `${daysUntilDue}d`
+                              }
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Status Badge */}
+                        <Badge className={`${getStatusColor(request.status)} border px-2 py-0.5 text-xs font-medium`}>
+                          {request.status_display}
+                        </Badge>
+
+                        {/* SLA Alert */}
+                        {request.sla_breached && (
+                          <Badge className="bg-red-50 text-red-700 border-red-200 border px-2 py-0.5 text-xs font-medium">
+                            <AlertCircle className="h-3 w-3" />
+                          </Badge>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
